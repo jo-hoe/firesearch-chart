@@ -13,6 +13,15 @@ updates:
       interval: weekly
     labels:
       - dependencies
+    # The Node base image must stay on an LTS (even-numbered) major. Dependabot
+    # can't reason about LTS, so ignore major bumps here — they would jump to
+    # non-LTS majors (e.g. 25). Minor/patch updates within the current LTS still
+    # flow through automatically; bump the major by hand when moving to the next
+    # LTS line.
+    ignore:
+      - dependency-name: "node"
+        update-types:
+          - "version-update:semver-major"
 
   - package-ecosystem: github-actions
     directory: /
