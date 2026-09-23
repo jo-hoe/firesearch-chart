@@ -1,0 +1,97 @@
+{{- if .Values.networkPolicy.enabled }}
+{{/*
+Network segmentation for the Firecrawl stack. This is opt-in and requires a CNI
+that enforces NetworkPolicy (Calico, Cilium, etc.); on a CNI without enforcement
+these objects are silently ignored.
+
+Model:
+  * Datastores (redis, rabbitmq, nuq-postgres) and the internal API/playwright
+    services only accept ingress from pods in THIS release (matched on the
+    app.kubernetes.io/instance label).
+  * The MCP server additionally accepts ingress from anywhere (or, if
+    networkPolicy.mcpIngressNamespaceSelector is set, only that namespace — e.g.
+    the ingress-controller namespace).
+  * Egress is left open so workers can reach the public internet to scrape and
+    resolve DNS. Lock this down with networkPolicy.denyEgress if your workloads
+    only ever scrape known hosts.
+*/}}
+{{- $fullName := include "firecrawl-mcp.fullname" . -}}
+{{- $instance := .Release.Name -}}
+
+# Datastores + internal services: ingress only from this release.
+{{- range $component := (list "redis" "rabbitmq" "nuq-postgres" "api" "playwright") }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "firecrawl-mcp.componentName" (list $ $component) }}
+  labels:
+    {{- include "firecrawl-mcp.componentLabels" (list $ $component) | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "firecrawl-mcp.selectorLabels" (list $ $component) | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ $instance }}
+---
+{{- end }}
+# MCP server: entry point. Ingress from the wider network (optionally scoped).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "firecrawl-mcp.componentName" (list . "mcp") }}
+  labels:
+    {{- include "firecrawl-mcp.componentLabels" (list . "mcp") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "firecrawl-mcp.selectorLabels" (list . "mcp") | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ $instance }}
+        {{- with .Values.networkPolicy.mcpIngressNamespaceSelector }}
+        - namespaceSelector:
+            {{- toYaml . | nindent 12 }}
+        {{- else }}
+        - namespaceSelector: {}
+        {{- end }}
+{{- if .Values.networkPolicy.denyEgress }}
+---
+# Optional: default-deny egress for all pods in this release, allowing only DNS
+# and in-cluster traffic. Enable only if workers never scrape arbitrary hosts.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullName }}-default-deny-egress
+  labels:
+    {{- include "firecrawl-mcp.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $instance }}
+  policyTypes:
+    - Egress
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Intra-release traffic
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ $instance }}
+{{- end }}
+{{- end }}

@@ -24,10 +24,16 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      serviceAccountName: {{ include "firecrawl-mcp.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
+      securityContext:
+        {{- include "firecrawl-mcp.podSecurityContext" (list .) | nindent 8 }}
       containers:
         - name: playwright
           image: "{{ .Values.playwright.image.repository }}:{{ .Values.playwright.image.tag }}"
           imagePullPolicy: {{ .Values.playwright.image.pullPolicy }}
+          securityContext:
+            {{- include "firecrawl-mcp.containerSecurityContext" (list . .Values.playwright.containerSecurityContext) | nindent 12 }}
           ports:
             - name: http
               containerPort: {{ .Values.playwright.port }}

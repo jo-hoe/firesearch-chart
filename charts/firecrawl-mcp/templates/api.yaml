@@ -24,11 +24,17 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      serviceAccountName: {{ include "firecrawl-mcp.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
+      securityContext:
+        {{- include "firecrawl-mcp.podSecurityContext" (list .) | nindent 8 }}
       terminationGracePeriodSeconds: 180
       containers:
         - name: api
           image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
           imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          securityContext:
+            {{- include "firecrawl-mcp.containerSecurityContext" (list . .Values.api.containerSecurityContext) | nindent 12 }}
           command: ["node"]
           args: ["--max-old-space-size={{ .Values.api.maxOldSpaceSizeMb }}", "dist/src/index.js"]
           ports:

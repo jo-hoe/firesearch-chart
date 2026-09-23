@@ -44,10 +44,16 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      serviceAccountName: {{ include "firecrawl-mcp.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
+      securityContext:
+        {{- include "firecrawl-mcp.podSecurityContext" (list . .Values.nuqPostgres.podSecurityContext) | nindent 8 }}
       containers:
         - name: nuq-postgres
           image: "{{ .Values.nuqPostgres.image.repository }}:{{ .Values.nuqPostgres.image.tag }}"
           imagePullPolicy: {{ .Values.nuqPostgres.image.pullPolicy }}
+          securityContext:
+            {{- include "firecrawl-mcp.containerSecurityContext" (list . .Values.nuqPostgres.containerSecurityContext) | nindent 12 }}
           ports:
             - name: postgres
               containerPort: {{ .Values.nuqPostgres.port }}

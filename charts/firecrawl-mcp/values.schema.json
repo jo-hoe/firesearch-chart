@@ -3,6 +3,25 @@
   "type": "object",
   "properties": {
     "revisionHistoryLimit": { "type": "integer", "minimum": 0 },
+    "serviceAccount": {
+      "type": "object",
+      "properties": {
+        "create": { "type": "boolean" },
+        "name": { "type": "string" },
+        "annotations": { "type": "object" },
+        "automountServiceAccountToken": { "type": "boolean" }
+      }
+    },
+    "podSecurityContext": { "type": "object" },
+    "containerSecurityContext": { "type": "object" },
+    "networkPolicy": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "mcpIngressNamespaceSelector": { "type": "object" },
+        "denyEgress": { "type": "boolean" }
+      }
+    },
     "resources": {
       "type": "object",
       "properties": {

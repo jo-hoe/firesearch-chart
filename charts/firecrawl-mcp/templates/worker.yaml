@@ -24,11 +24,17 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      serviceAccountName: {{ include "firecrawl-mcp.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
+      securityContext:
+        {{- include "firecrawl-mcp.podSecurityContext" (list .) | nindent 8 }}
       terminationGracePeriodSeconds: 60
       containers:
         - name: worker
           image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
           imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          securityContext:
+            {{- include "firecrawl-mcp.containerSecurityContext" (list . .Values.worker.containerSecurityContext) | nindent 12 }}
           command: ["node"]
           args: ["--max-old-space-size={{ .Values.worker.maxOldSpaceSizeMb }}", "dist/src/services/queue-worker.js"]
           ports:

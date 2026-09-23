@@ -33,6 +33,11 @@ Then connect Claude Code:
 {{- end }}
 
 Notes:
+{{- if .Values.networkPolicy.enabled }}
+  * NetworkPolicy is ENABLED — datastores accept traffic only from this release.
+    This requires a CNI that enforces NetworkPolicy (Calico/Cilium/etc.);
+    on other CNIs the policies are ignored. Disable with networkPolicy.enabled=false.
+{{- end }}
 {{- if not .Values.nuqPostgres.persistence.enabled }}
   * Postgres persistence is DISABLED — queue state is lost on pod restart.
     Set nuqPostgres.persistence.enabled=true for durable storage.

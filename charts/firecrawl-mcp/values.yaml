@@ -22,6 +22,19 @@ revisionHistoryLimit: 3
 # -- Image pull secrets applied to every pod.
 imagePullSecrets: []
 
+# ─── ServiceAccount ─────────────────────────────────────────────────────────────
+serviceAccount:
+  # -- Create a dedicated ServiceAccount for the chart's pods (recommended, so
+  # they don't run under the namespace `default` account).
+  create: true
+  # -- Name of the ServiceAccount. Defaults to the chart fullname when empty.
+  name: ""
+  # -- Annotations for the ServiceAccount (e.g. IRSA / Workload Identity roles).
+  annotations: {}
+  # -- Mount the SA token into pods. OFF by default because no component talks to
+  # the Kubernetes API; turn on only if you add one that does.
+  automountServiceAccountToken: false
+
 resources:
   # -- Master switch for applying the per-component `resources` blocks. Set false
   # to let pods run without requests/limits (handy for quick local experiments).
@@ -50,6 +63,14 @@ api:
     limits:
       memory: "6Gi"
       cpu: "2000m"
+  # -- Per-component container securityContext override (merged over the
+  # chart-wide containerSecurityContext).
+  containerSecurityContext: {}
+  # -- PodDisruptionBudget for the API. Only rendered when replicaCount > 1.
+  pdb:
+    enabled: true
+    maxUnavailable: 1
+    # minAvailable: 1  # takes precedence over maxUnavailable when set
 
 # ─── Queue worker ─────────────────────────────────────────────────────────────
 worker:
@@ -67,6 +88,8 @@ worker:
     limits:
       memory: "4Gi"
       cpu: "1000m"
+  # -- Per-component container securityContext override.
+  containerSecurityContext: {}
 
 # ─── NuQ workers (the primary scrape/crawl workers) ───────────────────────────
 nuqWorker:
@@ -85,6 +108,8 @@ nuqWorker:
     limits:
       memory: "4Gi"
       cpu: "1000m"
+  # -- Per-component container securityContext override.
+  containerSecurityContext: {}
 
 # ─── Playwright scraping microservice ─────────────────────────────────────────
 playwright:
@@ -109,6 +134,8 @@ playwright:
     limits:
       memory: "4Gi"
       cpu: "2000m"
+  # -- Per-component container securityContext override.
+  containerSecurityContext: {}
 
 # ─── Redis ────────────────────────────────────────────────────────────────────
 redis:
@@ -131,6 +158,8 @@ redis:
     limits:
       memory: "1Gi"
       cpu: "500m"
+  # -- Per-component container securityContext override.
+  containerSecurityContext: {}
 
 # ─── RabbitMQ (NuQ message broker) ────────────────────────────────────────────
 rabbitmq:
@@ -153,6 +182,8 @@ rabbitmq:
     limits:
       memory: "1Gi"
       cpu: "500m"
+  # -- Per-component container securityContext override.
+  containerSecurityContext: {}
 
 # ─── NuQ PostgreSQL (queue backend) ───────────────────────────────────────────
 nuqPostgres:
@@ -193,6 +224,21 @@ nuqPostgres:
     limits:
       memory: "1Gi"
       cpu: "500m"
+  # -- Per-component container securityContext override, merged over the
+  # chart-wide default. The Postgres image normally starts as root to chown its
+  # data dir, which the hardened default (drop ALL caps, no privilege
+  # escalation) forbids. Instead we run directly as the postgres user (UID 999)
+  # and rely on podSecurityContext.fsGroup below to make the volume writable.
+  containerSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 999
+    runAsGroup: 999
+  # -- Pod-level securityContext for Postgres, merged over the chart-wide
+  # podSecurityContext. fsGroup 999 makes the mounted data volume group-writable
+  # by the postgres user so no startup chown is needed.
+  podSecurityContext:
+    fsGroup: 999
+    fsGroupChangePolicy: OnRootMismatch
 
 # ─── Firecrawl MCP server (the externally-reachable endpoint) ─────────────────
 mcp:
@@ -207,6 +253,10 @@ mcp:
     pullPolicy: IfNotPresent
   # -- Container port the MCP image serves HTTP (NGINX + FastMCP) on.
   port: 8080
+  # -- Mount emptyDir volumes over the bundled nginx's writable paths
+  # (/var/lib/nginx/tmp, /var/log/nginx, /run/nginx) so it works under the
+  # hardened securityContext without a writable root filesystem.
+  nginxWritableVolumes: true
   # -- Public MCP path the FastMCP server and nginx serve. MCP clients connect to
   # `<ingress-host><endpoint>`. Keep in sync with any Ingress paths.
   endpoint: /v2/mcp
@@ -223,6 +273,30 @@ mcp:
     limits:
       memory: "512Mi"
       cpu: "500m"
+  # -- Per-component container securityContext override, merged over the
+  # chart-wide default. The bundled nginx starts as root and drops to its own
+  # worker user, so it needs a few capabilities back (the chart-wide default
+  # drops ALL). It still cannot escalate privileges and has no writable root fs.
+  containerSecurityContext:
+    capabilities:
+      drop:
+        - ALL
+      add:
+        - CHOWN
+        - SETUID
+        - SETGID
+        - DAC_OVERRIDE
+        - FOWNER
+  # -- Pod-level securityContext for the MCP server, merged over the chart-wide
+  # podSecurityContext. fsGroup 101 = the image's nginx group, so the emptyDir
+  # volumes mounted over nginx's writable paths are group-writable.
+  podSecurityContext:
+    fsGroup: 101
+  # -- PodDisruptionBudget for the MCP server. Only rendered when replicaCount > 1.
+  pdb:
+    enabled: true
+    maxUnavailable: 1
+    # minAvailable: 1  # takes precedence over maxUnavailable when set
   # -- Ingress for the MCP server — the ONLY externally-exposed component.
   ingress:
     enabled: false
@@ -263,6 +337,14 @@ config:
   # -- Arbitrary extra key/value pairs merged into the ConfigMap.
   extra: {}
 
+# ─── Helm test settings ─────────────────────────────────────────────────────
+tests:
+  # -- URL the `helm test` connection pod scrapes end-to-end to prove the full
+  # backend pipeline (API → queue → worker → playwright) returns markdown.
+  scrapeUrl: "https://example.com"
+  # -- Max seconds the test waits for the synchronous scrape to complete.
+  scrapeTimeoutSeconds: 120
+
 # ─── Secrets ──────────────────────────────────────────────────────────────────
 secrets:
   # -- If set, the chart will NOT create a Secret and reads credentials from this
@@ -285,8 +367,37 @@ tolerations: []
 # -- Affinity rules for all pods.
 affinity: {}
 
-# -- Pod-level security context. Firecrawl/Playwright images may write to the
-# filesystem, so readOnlyRootFilesystem is not enforced globally; see each
-# Deployment for the container-level context.
+# -- Pod-level security context, applied to every Deployment. `runAsNonRoot` is
+# left unset here because some upstream images (Playwright, the MCP nginx image)
+# still start as root; enable it per component via its containerSecurityContext
+# once you've confirmed the image supports it. seccomp is enabled cluster-wide.
 podSecurityContext:
-  runAsNonRoot: false
+  seccompProfile:
+    type: RuntimeDefault
+
+# -- Chart-wide container security context, merged into every workload container.
+# These are the restricted-baseline hardening defaults. Per-component overrides
+# (e.g. api.containerSecurityContext) are merged on top and win on conflict.
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  privileged: false
+  capabilities:
+    drop:
+      - ALL
+  # readOnlyRootFilesystem is left off: Firecrawl/Playwright/Postgres images
+  # write outside mounted volumes. Enable per component after adding writable
+  # emptyDir mounts for the paths that image needs.
+  readOnlyRootFilesystem: false
+
+# ─── NetworkPolicy ──────────────────────────────────────────────────────────────
+networkPolicy:
+  # -- Restrict pod-to-pod traffic: datastores and internal services accept
+  # ingress only from this release; the MCP server is the sole entry point.
+  # Requires a CNI that enforces NetworkPolicy (Calico/Cilium/etc.).
+  enabled: true
+  # -- Optional namespaceSelector limiting who may reach the MCP server (e.g. the
+  # ingress-controller namespace). Empty means any namespace.
+  mcpIngressNamespaceSelector: {}
+  # -- Also apply a default-deny egress policy (DNS + intra-release only). Leave
+  # false unless your workers never scrape arbitrary internet hosts.
+  denyEgress: false

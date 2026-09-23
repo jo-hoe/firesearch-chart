@@ -24,10 +24,16 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      serviceAccountName: {{ include "firecrawl-mcp.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
+      securityContext:
+        {{- include "firecrawl-mcp.podSecurityContext" (list .) | nindent 8 }}
       containers:
         - name: redis
           image: "{{ .Values.redis.image.repository }}:{{ .Values.redis.image.tag }}"
           imagePullPolicy: {{ .Values.redis.image.pullPolicy }}
+          securityContext:
+            {{- include "firecrawl-mcp.containerSecurityContext" (list . .Values.redis.containerSecurityContext) | nindent 12 }}
           command: ["redis-server", "--bind", "0.0.0.0"]
           ports:
             - name: redis

@@ -18,10 +18,26 @@ spec:
         - |
           set -e
           echo "Checking Firecrawl API readiness..."
-          curl -fsS "http://{{ include "firecrawl-mcp.apiHost" . }}:{{ .Values.api.port }}/v0/health/readiness"
+          # Retry: a freshly-scheduled pod can race NetworkPolicy programming on
+          # some CNIs (e.g. kube-router), so the first connection may be refused.
+          for i in $(seq 1 30); do
+            if curl -fsS -m 5 "http://{{ include "firecrawl-mcp.apiHost" . }}:{{ .Values.api.port }}/v0/health/readiness"; then
+              break
+            fi
+            echo "  API not reachable yet (attempt $i), retrying..."
+            sleep 3
+            [ "$i" = "30" ] && { echo "API never became reachable"; exit 1; }
+          done
           echo
           echo "Checking MCP server health..."
-          curl -fsS -o /dev/null "http://{{ include "firecrawl-mcp.componentName" (list . "mcp") }}:{{ .Values.mcp.service.port }}/health"
+          for i in $(seq 1 20); do
+            if curl -fsS -m 5 -o /dev/null "http://{{ include "firecrawl-mcp.componentName" (list . "mcp") }}:{{ .Values.mcp.service.port }}/health"; then
+              break
+            fi
+            echo "  MCP not reachable yet (attempt $i), retrying..."
+            sleep 3
+            [ "$i" = "20" ] && { echo "MCP never became reachable"; exit 1; }
+          done
           echo
           echo "Performing MCP initialize handshake..."
           curl -fsS -X POST "http://{{ include "firecrawl-mcp.componentName" (list . "mcp") }}:{{ .Values.mcp.service.port }}{{ .Values.mcp.endpoint }}" \
@@ -29,6 +45,21 @@ spec:
             -H "Accept: application/json, text/event-stream" \
             -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"helm-test","version":"1.0"}}}' \
             | grep -q '"serverInfo"'
+          echo "MCP handshake OK"
+          echo "Scraping a real website through the Firecrawl backend ({{ .Values.tests.scrapeUrl }})..."
+          # Exercises the full pipeline: API -> queue -> nuq-worker -> playwright.
+          # v1/scrape is synchronous and returns the page rendered as markdown.
+          body=$(curl -fsS --max-time {{ .Values.tests.scrapeTimeoutSeconds }} \
+            -X POST "http://{{ include "firecrawl-mcp.apiHost" . }}:{{ .Values.api.port }}/v1/scrape" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer self-hosted" \
+            -d '{"url":"{{ .Values.tests.scrapeUrl }}","formats":["markdown"]}')
+          echo "$body" | grep -q '"success":true' || { echo "scrape did not succeed:"; echo "$body" | head -c 500; exit 1; }
+          echo "$body" | grep -q '"markdown"' || { echo "no markdown in scrape result:"; echo "$body" | head -c 500; exit 1; }
+          # Print a short excerpt of the returned markdown as evidence.
+          echo "Markdown received (excerpt):"
+          echo "$body" | tr ',' '\n' | grep '"markdown"' | head -c 300
+          echo
           echo "OK"
       securityContext:
         allowPrivilegeEscalation: false

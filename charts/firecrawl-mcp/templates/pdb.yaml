@@ -1,0 +1,28 @@
+{{/*
+PodDisruptionBudgets for the availability-sensitive, horizontally-scaled
+components (MCP server and Firecrawl API). Datastores run a single replica with
+a Recreate/rolling strategy, so a PDB there would only block node drains.
+*/}}
+{{- range $component := (list "mcp" "api") }}
+{{- $cfg := index $.Values $component }}
+{{- if and $cfg.pdb $cfg.pdb.enabled }}
+{{- if gt (int $cfg.replicaCount) 1 }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "firecrawl-mcp.componentName" (list $ $component) }}
+  labels:
+    {{- include "firecrawl-mcp.componentLabels" (list $ $component) | nindent 4 }}
+spec:
+  {{- if $cfg.pdb.minAvailable }}
+  minAvailable: {{ $cfg.pdb.minAvailable }}
+  {{- else }}
+  maxUnavailable: {{ $cfg.pdb.maxUnavailable | default 1 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "firecrawl-mcp.selectorLabels" (list $ $component) | nindent 6 }}
+---
+{{- end }}
+{{- end }}
+{{- end }}

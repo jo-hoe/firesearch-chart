@@ -24,10 +24,16 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      serviceAccountName: {{ include "firecrawl-mcp.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
+      securityContext:
+        {{- include "firecrawl-mcp.podSecurityContext" (list . .Values.mcp.podSecurityContext) | nindent 8 }}
       containers:
         - name: mcp
           image: "{{ .Values.mcp.image.repository }}:{{ .Values.mcp.image.tag }}"
           imagePullPolicy: {{ .Values.mcp.image.pullPolicy }}
+          securityContext:
+            {{- include "firecrawl-mcp.containerSecurityContext" (list . .Values.mcp.containerSecurityContext) | nindent 12 }}
           ports:
             - name: http
               containerPort: {{ .Values.mcp.port }}
@@ -70,6 +76,26 @@ spec:
               port: http
             initialDelaySeconds: 5
             periodSeconds: 10
+          {{- if .Values.mcp.nginxWritableVolumes }}
+          # The bundled nginx needs to write its temp dirs, logs and pid. Back
+          # them with emptyDir so the container filesystem stays hardened.
+          volumeMounts:
+            - name: nginx-tmp
+              mountPath: /var/lib/nginx/tmp
+            - name: nginx-log
+              mountPath: /var/log/nginx
+            - name: nginx-run
+              mountPath: /run/nginx
+          {{- end }}
+      {{- if .Values.mcp.nginxWritableVolumes }}
+      volumes:
+        - name: nginx-tmp
+          emptyDir: {}
+        - name: nginx-log
+          emptyDir: {}
+        - name: nginx-run
+          emptyDir: {}
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

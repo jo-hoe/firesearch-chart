@@ -78,6 +78,46 @@ Pass the component suffix as the second arg.
 {{- end }}
 
 {{/*
+The name of the ServiceAccount used by every pod. Either a user-provided
+existing account or one created by this chart.
+*/}}
+{{- define "firecrawl-mcp.serviceAccountName" -}}
+{{- if .Values.serviceAccount.create }}
+{{- default (include "firecrawl-mcp.fullname" .) .Values.serviceAccount.name }}
+{{- else }}
+{{- default "default" .Values.serviceAccount.name }}
+{{- end }}
+{{- end }}
+
+{{/*
+Pod-level securityContext, applied to every Deployment's pod spec. Merges the
+chart-wide default (.Values.podSecurityContext) with an optional per-component
+override passed as the second list arg. The per-component map wins on conflict.
+  {{ include "firecrawl-mcp.podSecurityContext" (list . .Values.nuqPostgres.podSecurityContext) }}
+*/}}
+{{- define "firecrawl-mcp.podSecurityContext" -}}
+{{- $root := index . 0 -}}
+{{- $override := dict -}}
+{{- if gt (len .) 1 -}}{{- $override = index . 1 | default dict -}}{{- end -}}
+{{- $ctx := mergeOverwrite (deepCopy $root.Values.podSecurityContext) $override -}}
+{{- toYaml $ctx }}
+{{- end }}
+
+{{/*
+Container-level securityContext, applied to every workload container. Merges the
+chart-wide hardened defaults (.Values.containerSecurityContext) with an optional
+per-component override passed as the second list arg, e.g.
+  {{ include "firecrawl-mcp.containerSecurityContext" (list . .Values.playwright.containerSecurityContext) }}
+The per-component map wins on conflicting keys.
+*/}}
+{{- define "firecrawl-mcp.containerSecurityContext" -}}
+{{- $root := index . 0 -}}
+{{- $override := index . 1 | default dict -}}
+{{- $ctx := mergeOverwrite (deepCopy $root.Values.containerSecurityContext) $override -}}
+{{- toYaml $ctx }}
+{{- end }}
+
+{{/*
 The name of the Secret holding credentials — either a user-provided existing
 Secret or one created by this chart.
 */}}
