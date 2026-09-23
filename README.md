@@ -48,21 +48,35 @@ make build                 # docker build -t firesearch:local .
 
 ## Deploy with Helm
 
-API keys are supplied as values and rendered into a Kubernetes Secret; the
-Deployment consumes them as environment variables via `secretKeyRef`.
+The chart is published as an **OCI artifact** to GitHub Container Registry, and
+the container image is published alongside it on each version tag. Install
+directly from the registry — no `helm repo add` needed:
 
 ```bash
-helm install firesearch charts/firesearch \
+helm install firesearch oci://ghcr.io/jo-hoe/charts/firesearch \
+  --version 0.2.0 \
   --namespace firesearch --create-namespace \
   --set-string secrets.openaiApiKey=sk-... \
   --set-string secrets.firecrawlApiKey=fc-... \
   --set-string secrets.openaiBaseUrl=https://your-openai-compatible-endpoint/
 ```
 
-To use a Secret you manage yourself instead of having the chart create one:
+Or from a local checkout of this repo:
 
 ```bash
 helm install firesearch charts/firesearch \
+  --namespace firesearch --create-namespace \
+  --set-string secrets.openaiApiKey=sk-... \
+  --set-string secrets.firecrawlApiKey=fc-...
+```
+
+API keys are rendered into a Kubernetes Secret; the Deployment consumes them as
+environment variables via `secretKeyRef`.
+
+To use a Secret you manage yourself instead of having the chart create one:
+
+```bash
+helm install firesearch oci://ghcr.io/jo-hoe/charts/firesearch --version 0.2.0 \
   --set secrets.existingSecret=my-firesearch-secret
 ```
 
@@ -74,7 +88,7 @@ and `FIRECRAWL_API_KEY`.
 | Value | Default | Description |
 | --- | --- | --- |
 | `replicaCount` | `1` | Number of replicas (stateless; scales horizontally). |
-| `image.repository` | `ghcr.io/firecrawl/firesearch` | Image repo. |
+| `image.repository` | `ghcr.io/jo-hoe/firesearch-chart` | Image repo. |
 | `image.tag` | `""` (chart appVersion) | Image tag. |
 | `resources` | 500m/512Mi limits | CPU/memory limits & requests. |
 | `ingress.enabled` | `false` | Toggle Ingress (off by default). |
@@ -93,9 +107,20 @@ Tear down with `make k3d-down`.
 
 ## CI / Release
 
-- **`ci.yml`** — on every push/PR: lints & builds the app and the chart; on
-  `v*.*.*` tags: builds and publishes the image to `ghcr.io` with semver tags.
-- **`chart-release.yml`** — on changes to `charts/firesearch/Chart.yaml`:
-  packages and publishes the chart to the `gh-pages` Helm repository via
-  `helm/chart-releaser-action`.
+- **`ci.yml`** — on every push/PR: lints the Helm chart and builds the container
+  image (the real integration test — the Dockerfile clones Firesearch at build
+  time). On `v*.*.*` tags it also publishes the image to `ghcr.io` with semver
+  tags.
+- **`chart-release.yml`** — on `v*.*.*` tags: packages the chart and pushes it as
+  an OCI artifact to `oci://ghcr.io/jo-hoe/charts/firesearch`. No gh-pages branch.
 - **`dependabot-auto-merge.yml`** — auto-merges green Dependabot PRs.
+
+### Cutting a release
+
+Both the image and the chart publish off the same version tag:
+
+```bash
+# bump chart version + appVersion in charts/firesearch/Chart.yaml first, then:
+git tag v0.2.0
+git push origin v0.2.0
+```

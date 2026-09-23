@@ -1,41 +1,52 @@
 name: Release Chart
 
-# Publishes the Helm chart to the gh-pages branch (as a Helm repo) whenever the
-# chart version in Chart.yaml changes on main. Uses the official chart-releaser.
+# Packages the Helm chart and pushes it as an OCI artifact to GitHub Container
+# Registry (ghcr.io) on every version tag. No gh-pages branch is used.
+#
+# Consume the published chart with:
+#   helm install firesearch oci://ghcr.io/jo-hoe/charts/firesearch --version <x.y.z>
 on:
   push:
-    branches:
-      - main
-    paths:
-      - 'charts/firesearch/Chart.yaml'
+    tags:
+      - 'v*.*.*'
 
-# Serialize releases so concurrent runs don't clobber the gh-pages index.
+# Serialize releases so concurrent tag pushes don't race.
 concurrency:
   group: chart-release
   cancel-in-progress: false
 
+env:
+  # OCI registry namespace the chart is pushed to (chart name is appended).
+  CHART_REGISTRY: oci://ghcr.io/${{ github.repository_owner }}/charts
+
 jobs:
   release:
+    name: Package & Push Chart (OCI)
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
+      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Configure Git
-        run: |
-          git config user.name "$GITHUB_ACTOR"
-          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
 
       - name: Install Helm
         uses: azure/setup-helm@v5
 
-      - name: Run chart-releaser
-        uses: helm/chart-releaser-action@v1.7.0
-        with:
-          charts_dir: charts
-        env:
-          CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+      - name: Lint chart
+        run: helm lint charts/firesearch --strict
+
+      - name: Log in to GHCR (Helm registry)
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Package chart
+        run: helm package charts/firesearch --destination ./.cr-release-packages
+
+      - name: Push chart to GHCR
+        run: |
+          for pkg in ./.cr-release-packages/*.tgz; do
+            echo "Pushing $pkg to ${CHART_REGISTRY}"
+            helm push "$pkg" "${CHART_REGISTRY}"
+          done

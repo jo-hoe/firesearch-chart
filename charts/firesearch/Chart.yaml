@@ -7,8 +7,10 @@ type: application
 version: 0.2.0
 
 # Version of the Firesearch application deployed by this chart.
-# Matches the default image tag in values.yaml.
-appVersion: "1.0.0"
+# The image is built from Firesearch's main branch and tagged with this chart's
+# release version, so appVersion tracks the chart release (see values.yaml
+# image.tag, which defaults to this).
+appVersion: "0.2.0"
 
 home: https://github.com/jo-hoe/firesearch-chart
 sources:

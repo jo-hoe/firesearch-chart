@@ -8,7 +8,8 @@ replicaCount: 1
 revisionHistoryLimit: 3
 
 image:
-  repository: ghcr.io/firecrawl/firesearch
+  # Published by this repo's CI to GHCR on each version tag.
+  repository: ghcr.io/jo-hoe/firesearch-chart
   # The Firesearch release version to deploy. This is the image tag; the image
   # is built from the matching Firesearch git ref (see Dockerfile FIRESEARCH_REF).
   # Defaults to the chart appVersion when left empty.
