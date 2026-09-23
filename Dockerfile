@@ -8,7 +8,7 @@
 # builder fetches the app itself. Pin the ref for reproducible builds:
 #   docker build --build-arg FIRESEARCH_REF=<tag|branch|sha> -t firesearch:local .
 # ─────────────────────────────────────────────────────────────────────────────
-FROM node:20-alpine AS builder
+FROM node:25-alpine AS builder
 
 # Firesearch git ref to build (tag, branch, or commit SHA).
 ARG FIRESEARCH_REPO=https://github.com/firecrawl/firesearch.git
@@ -45,7 +45,7 @@ RUN pnpm run build
 # ─────────────────────────────────────────────────────────────────────────────
 # Stage 2 — Runner: minimal runtime image serving the standalone output.
 # ─────────────────────────────────────────────────────────────────────────────
-FROM node:20-alpine AS runner
+FROM node:25-alpine AS runner
 
 WORKDIR /app
 
