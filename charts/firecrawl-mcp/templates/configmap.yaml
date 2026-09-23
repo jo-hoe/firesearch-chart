@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "firecrawl-mcp.configName" . }}
+  labels:
+    {{- include "firecrawl-mcp.labels" . | nindent 4 }}
+data:
+  # ── Server / worker ports ──
+  PORT: {{ .Values.api.port | quote }}
+  HOST: "0.0.0.0"
+  WORKER_PORT: {{ .Values.worker.port | quote }}
+  NUQ_WORKER_PORT: {{ .Values.nuqWorker.port | quote }}
+  NUQ_WORKER_COUNT: {{ .Values.nuqWorker.replicaCount | quote }}
+  NUM_WORKERS_PER_QUEUE: {{ .Values.config.numWorkersPerQueue | quote }}
+  # ── Internal service URLs (computed from the release name) ──
+  REDIS_URL: {{ include "firecrawl-mcp.redisUrl" . | quote }}
+  REDIS_RATE_LIMIT_URL: {{ include "firecrawl-mcp.redisUrl" . | quote }}
+  PLAYWRIGHT_MICROSERVICE_URL: {{ include "firecrawl-mcp.playwrightUrl" . | quote }}
+  NUQ_DATABASE_URL: {{ include "firecrawl-mcp.postgresUrl" . | quote }}
+  NUQ_DATABASE_URL_LISTEN: {{ include "firecrawl-mcp.postgresUrl" . | quote }}
+  NUQ_RABBITMQ_URL: {{ include "firecrawl-mcp.rabbitmqUrl" . | quote }}
+  # ── Behaviour ──
+  USE_DB_AUTHENTICATION: {{ .Values.config.useDbAuthentication | quote }}
+  IS_KUBERNETES: "true"
+  ENV: "production"
+  LOGGING_LEVEL: {{ .Values.config.loggingLevel | quote }}
+  # ── Optional AI-backed features ──
+  OPENAI_BASE_URL: {{ .Values.config.openaiBaseUrl | quote }}
+  MODEL_NAME: {{ .Values.config.modelName | quote }}
+  MODEL_EMBEDDING_NAME: {{ .Values.config.modelEmbeddingName | quote }}
+  OLLAMA_BASE_URL: {{ .Values.config.ollamaBaseUrl | quote }}
+  {{- range $k, $v := .Values.config.extra }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}

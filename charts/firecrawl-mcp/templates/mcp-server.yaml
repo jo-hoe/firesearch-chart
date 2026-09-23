@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "firecrawl-mcp.componentName" (list . "mcp") }}
+  labels:
+    {{- include "firecrawl-mcp.componentLabels" (list . "mcp") | nindent 4 }}
+spec:
+  replicas: {{ .Values.mcp.replicaCount }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  selector:
+    matchLabels:
+      {{- include "firecrawl-mcp.selectorLabels" (list . "mcp") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "firecrawl-mcp.selectorLabels" (list . "mcp") | nindent 8 }}
+        {{- with .Values.podLabels }}{{ toYaml . | nindent 8 }}{{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: mcp
+          image: "{{ .Values.mcp.image.repository }}:{{ .Values.mcp.image.tag }}"
+          imagePullPolicy: {{ .Values.mcp.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.mcp.port }}
+          env:
+            # Run FastMCP as a long-lived HTTP streamable server. Without this
+            # the process defaults to stdio mode and exits immediately, leaving
+            # nginx with no upstream (502 Bad Gateway).
+            - name: HTTP_STREAMABLE_SERVER
+              value: "true"
+            # FastMCP listens on 127.0.0.1:3000 behind the image's nginx, which
+            # terminates on the container port. These match the image defaults;
+            # do not change without updating the bundled nginx upstream.
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT
+              value: "3000"
+            # Public MCP path served by nginx and the app.
+            - name: FASTMCP_ENDPOINT
+              value: {{ .Values.mcp.endpoint | quote }}
+            # Point the MCP server at the in-cluster Firecrawl API.
+            - name: FIRECRAWL_API_URL
+              value: {{ include "firecrawl-mcp.firecrawlApiUrl" . | quote }}
+            # The self-hosted API is unauthenticated, but the MCP server still
+            # expects a non-empty key. Any value works.
+            - name: FIRECRAWL_API_KEY
+              value: "self-hosted"
+          {{- if .Values.resources.enabled }}
+          resources:
+            {{- toYaml .Values.mcp.resources | nindent 12 }}
+          {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "firecrawl-mcp.componentName" (list . "mcp") }}
+  labels:
+    {{- include "firecrawl-mcp.componentLabels" (list . "mcp") | nindent 4 }}
+spec:
+  type: {{ .Values.mcp.service.type }}
+  selector:
+    {{- include "firecrawl-mcp.selectorLabels" (list . "mcp") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.mcp.service.port }}
+      targetPort: http

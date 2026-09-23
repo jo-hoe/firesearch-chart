@@ -1,0 +1,11 @@
+# Patterns to ignore when building packages.
+.git/
+.gitignore
+.DS_Store
+*.tmpl
+*.orig
+*~
+.vscode/
+.idea/
+# Local-only override files
+*.local.yaml

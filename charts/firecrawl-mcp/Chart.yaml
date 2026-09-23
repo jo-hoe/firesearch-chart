@@ -1,0 +1,28 @@
+apiVersion: v2
+name: firecrawl-mcp
+description: >-
+  An unofficial Helm chart for a fully self-hosted Firecrawl backend and
+  Firecrawl MCP server. Lets an MCP client (e.g. Claude Code) reach a
+  self-hosted Firecrawl over HTTP with no external API keys. Not affiliated with
+  or endorsed by Firecrawl.
+type: application
+
+# Chart version. Bumped on every packaging change to the chart.
+version: 0.1.0
+
+# Version of the upstream Firecrawl stack this chart deploys. The component
+# images default to the "latest" published tags (see values.yaml); pin them for
+# reproducible deployments.
+appVersion: "latest"
+
+home: https://github.com/jo-hoe/firesearch-chart
+sources:
+  - https://github.com/jo-hoe/firesearch-chart
+keywords:
+  - firecrawl
+  - mcp
+  - scraping
+  - self-hosted
+maintainers:
+  - name: jo-hoe
+    url: https://github.com/jo-hoe

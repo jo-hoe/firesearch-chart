@@ -1,0 +1,121 @@
+{{- if .Values.nuqPostgres.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "firecrawl-mcp.componentName" (list . "nuq-postgres") }}
+  labels:
+    {{- include "firecrawl-mcp.componentLabels" (list . "nuq-postgres") | nindent 4 }}
+spec:
+  accessModes:
+    {{- toYaml .Values.nuqPostgres.persistence.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .Values.nuqPostgres.persistence.size }}
+  {{- if .Values.nuqPostgres.persistence.storageClass }}
+  storageClassName: {{ .Values.nuqPostgres.persistence.storageClass | quote }}
+  {{- end }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "firecrawl-mcp.componentName" (list . "nuq-postgres") }}
+  labels:
+    {{- include "firecrawl-mcp.componentLabels" (list . "nuq-postgres") | nindent 4 }}
+spec:
+  replicas: {{ .Values.nuqPostgres.replicaCount }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  # Postgres is a single-writer store; never roll two pods onto one volume.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "firecrawl-mcp.selectorLabels" (list . "nuq-postgres") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "firecrawl-mcp.selectorLabels" (list . "nuq-postgres") | nindent 8 }}
+        {{- with .Values.podLabels }}{{ toYaml . | nindent 8 }}{{- end }}
+      annotations:
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}{{ toYaml . | nindent 8 }}{{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: nuq-postgres
+          image: "{{ .Values.nuqPostgres.image.repository }}:{{ .Values.nuqPostgres.image.tag }}"
+          imagePullPolicy: {{ .Values.nuqPostgres.image.pullPolicy }}
+          ports:
+            - name: postgres
+              containerPort: {{ .Values.nuqPostgres.port }}
+          env:
+            - name: POSTGRES_USER
+              value: {{ .Values.nuqPostgres.auth.username | quote }}
+            - name: POSTGRES_DB
+              value: {{ .Values.nuqPostgres.auth.database | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "firecrawl-mcp.secretName" . }}
+                  key: POSTGRES_PASSWORD
+            # Data dir as a subdir so the volume root (which may contain
+            # lost+found on some CSI drivers) does not break initdb.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          {{- if .Values.resources.enabled }}
+          resources:
+            {{- toYaml .Values.nuqPostgres.resources | nindent 12 }}
+          {{- end }}
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "{{ .Values.nuqPostgres.auth.username }}", "-d", "{{ .Values.nuqPostgres.auth.database }}"]
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "{{ .Values.nuqPostgres.auth.username }}", "-d", "{{ .Values.nuqPostgres.auth.database }}"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: data
+        {{- if .Values.nuqPostgres.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "firecrawl-mcp.componentName" (list . "nuq-postgres") }}
+        {{- else }}
+          emptyDir: {}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "firecrawl-mcp.componentName" (list . "nuq-postgres") }}
+  labels:
+    {{- include "firecrawl-mcp.componentLabels" (list . "nuq-postgres") | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "firecrawl-mcp.selectorLabels" (list . "nuq-postgres") | nindent 4 }}
+  ports:
+    - name: postgres
+      port: {{ .Values.nuqPostgres.port }}
+      targetPort: postgres

@@ -1,0 +1,87 @@
+# Minimal-footprint overrides for the firecrawl-mcp chart.
+#
+# Collapses the production defaults down to a single small replica per component
+# so the whole stack fits on a laptop / k3d / homelab (~4-6GB total).
+#
+#   helm install firecrawl-mcp charts/firecrawl-mcp \
+#     -f charts/firecrawl-mcp/values-minimal.yaml \
+#     --set mcp.ingress.enabled=true
+
+api:
+  replicaCount: 1
+  maxOldSpaceSizeMb: 1024
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1536Mi"
+      cpu: "1000m"
+
+worker:
+  replicaCount: 1
+  maxOldSpaceSizeMb: 768
+  resources:
+    requests:
+      memory: "384Mi"
+      cpu: "100m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+
+nuqWorker:
+  replicaCount: 1
+  maxOldSpaceSizeMb: 768
+  resources:
+    requests:
+      memory: "384Mi"
+      cpu: "100m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+
+playwright:
+  replicaCount: 1
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+
+redis:
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "256Mi"
+      cpu: "250m"
+
+rabbitmq:
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+nuqPostgres:
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "50m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+mcp:
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "50m"
+    limits:
+      memory: "256Mi"
+      cpu: "250m"

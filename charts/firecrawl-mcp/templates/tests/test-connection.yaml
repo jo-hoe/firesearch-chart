@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "firecrawl-mcp.fullname" . }}-test-connection
+  labels:
+    {{- include "firecrawl-mcp.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  containers:
+    - name: test
+      image: curlimages/curl:8.11.0
+      command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          echo "Checking Firecrawl API readiness..."
+          curl -fsS "http://{{ include "firecrawl-mcp.apiHost" . }}:{{ .Values.api.port }}/v0/health/readiness"
+          echo
+          echo "Checking MCP server health..."
+          curl -fsS -o /dev/null "http://{{ include "firecrawl-mcp.componentName" (list . "mcp") }}:{{ .Values.mcp.service.port }}/health"
+          echo
+          echo "Performing MCP initialize handshake..."
+          curl -fsS -X POST "http://{{ include "firecrawl-mcp.componentName" (list . "mcp") }}:{{ .Values.mcp.service.port }}{{ .Values.mcp.endpoint }}" \
+            -H "Content-Type: application/json" \
+            -H "Accept: application/json, text/event-stream" \
+            -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"helm-test","version":"1.0"}}}' \
+            | grep -q '"serverInfo"'
+          echo "OK"
+      securityContext:
+        allowPrivilegeEscalation: false
+        runAsNonRoot: true
+        # curlimages/curl runs as the named user "curl_user" (UID 100); pin the
+        # numeric UID so the kubelet can verify runAsNonRoot.
+        runAsUser: 100
+        capabilities:
+          drop:
+            - ALL

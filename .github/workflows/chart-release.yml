@@ -4,7 +4,7 @@ name: Release Chart
 # Registry (ghcr.io) on every version tag. No gh-pages branch is used.
 #
 # Consume the published chart with:
-#   helm install firesearch oci://ghcr.io/jo-hoe/charts/firesearch --version <x.y.z>
+#   helm install firecrawl oci://ghcr.io/jo-hoe/charts/firecrawl-mcp --version <x.y.z>
 on:
   push:
     tags:
@@ -34,7 +34,19 @@ jobs:
         uses: azure/setup-helm@v5
 
       - name: Lint chart
-        run: helm lint charts/firesearch --strict
+        run: helm lint charts/firecrawl-mcp --strict
+
+      - name: Verify helm-docs are up to date
+        # Regenerate the chart README with the same tool `make generate-helm-docs`
+        # uses, and fail if it differs from what's committed — so a published
+        # chart never ships stale docs. Run `make generate-helm-docs` and commit
+        # the result to fix a failure here.
+        run: |
+          docker run --rm --volume "$PWD/charts/firecrawl-mcp:/helm-docs" jnorwood/helm-docs:latest
+          if ! git diff --exit-code -- charts/firecrawl-mcp/README.md; then
+            echo "::error::charts/firecrawl-mcp/README.md is out of date. Run 'make generate-helm-docs' and commit the result." >&2
+            exit 1
+          fi
 
       - name: Log in to GHCR (Helm registry)
         run: |
@@ -42,7 +54,7 @@ jobs:
             | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Package chart
-        run: helm package charts/firesearch --destination ./.cr-release-packages
+        run: helm package charts/firecrawl-mcp --destination ./.cr-release-packages
 
       - name: Push chart to GHCR
         run: |

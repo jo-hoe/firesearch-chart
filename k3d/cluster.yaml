@@ -1,5 +1,8 @@
-# k3d cluster definition for local end-to-end testing of the firesearch chart.
+# k3d cluster definition for local end-to-end testing of the firecrawl-mcp chart.
 # Create with:  k3d cluster create --config k3d/cluster.yaml
+#
+# All components use official ghcr.io/firecrawl/* images pulled from the
+# internet, so no local registry is needed.
 apiVersion: k3d.io/v1alpha5
 kind: Simple
 metadata:
@@ -7,13 +10,8 @@ metadata:
 servers: 1
 agents: 1
 ports:
-  # Expose the cluster's Traefik ingress on localhost:8080.
+  # Expose the cluster's Traefik ingress on localhost:8080 so the MCP endpoint
+  # is reachable at http://<mcp-host>:8080/v2/mcp.
   - port: 8080:80
     nodeFilters:
       - loadbalancer
-registries:
-  # A local registry so we can push the locally-built image without a remote push.
-  create:
-    name: firesearch-registry
-    host: "0.0.0.0"
-    hostPort: "5000"

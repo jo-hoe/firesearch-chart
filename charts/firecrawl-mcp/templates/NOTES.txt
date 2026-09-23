@@ -1,0 +1,47 @@
+Firecrawl + MCP server deployed.
+
+Components:
+  - firecrawl api, queue worker, {{ .Values.nuqWorker.replicaCount }} nuq worker(s)
+  - playwright, redis, rabbitmq, nuq-postgres
+  - firecrawl mcp server (the endpoint your MCP client connects to)
+
+{{- if .Values.mcp.ingress.enabled }}
+
+MCP endpoint (via Ingress):
+{{- range .Values.mcp.ingress.hosts }}
+{{- $scheme := "http" }}
+{{- if $.Values.mcp.ingress.tls }}{{ $scheme = "https" }}{{ end }}
+  {{ $scheme }}://{{ .host }}/v2/mcp
+{{- end }}
+
+Connect Claude Code:
+{{- range .Values.mcp.ingress.hosts }}
+{{- $scheme := "http" }}
+{{- if $.Values.mcp.ingress.tls }}{{ $scheme = "https" }}{{ end }}
+  claude mcp add --transport http firecrawl {{ $scheme }}://{{ .host }}/v2/mcp
+{{- end }}
+{{- else }}
+
+The MCP server is not exposed via Ingress (mcp.ingress.enabled=false).
+Reach it locally with a port-forward:
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "firecrawl-mcp.componentName" (list . "mcp") }} 8080:{{ .Values.mcp.service.port }}
+
+Then connect Claude Code:
+
+  claude mcp add --transport http firecrawl http://localhost:8080/v2/mcp
+{{- end }}
+
+Notes:
+{{- if not .Values.nuqPostgres.persistence.enabled }}
+  * Postgres persistence is DISABLED — queue state is lost on pod restart.
+    Set nuqPostgres.persistence.enabled=true for durable storage.
+{{- end }}
+{{- if not .Values.config.useDbAuthentication }}
+  * The Firecrawl API is UNAUTHENTICATED (config.useDbAuthentication=false).
+    Do not expose it outside a trusted network.
+{{- end }}
+
+Check rollout:
+  kubectl -n {{ .Release.Namespace }} get pods
+  kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "firecrawl-mcp.componentName" (list . "api") }}

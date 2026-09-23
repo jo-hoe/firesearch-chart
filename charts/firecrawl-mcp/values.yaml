@@ -1,0 +1,236 @@
+# Default values for the firecrawl-mcp chart.
+#
+# This chart deploys a fully self-hosted Firecrawl backend plus the Firecrawl
+# MCP server, so an MCP client (e.g. Claude Code) can reach Firecrawl over HTTP
+# with no external API keys.
+#
+# ─── SCALING ──────────────────────────────────────────────────────────────────
+# Defaults mirror upstream Firecrawl's PRODUCTION sizing (multiple workers,
+# multi-GB pods). This needs a real cluster (~20GB+ RAM). To run on a laptop /
+# k3d / homelab, install with the bundled minimal overrides:
+#   helm install firecrawl-mcp charts/firecrawl-mcp -f charts/firecrawl-mcp/values-minimal.yaml
+# ──────────────────────────────────────────────────────────────────────────────
+
+nameOverride: ""
+fullnameOverride: ""
+
+# Number of old ReplicaSets to retain for rollback (applies to all Deployments).
+revisionHistoryLimit: 3
+
+imagePullSecrets: []
+
+# Master switch for applying the resources: blocks below. Set false to let pods
+# run without requests/limits (handy for quick local experiments).
+resources:
+  enabled: true
+
+# ─── Firecrawl API ────────────────────────────────────────────────────────────
+api:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/firecrawl/firecrawl
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  port: 3002
+  # Node heap ceiling passed via --max-old-space-size (MB). Keep below the
+  # memory limit to leave room for non-heap allocations.
+  maxOldSpaceSizeMb: 6144
+  resources:
+    requests:
+      memory: "4Gi"
+      cpu: "2000m"
+    limits:
+      memory: "6Gi"
+      cpu: "2000m"
+
+# ─── Queue worker ─────────────────────────────────────────────────────────────
+worker:
+  replicaCount: 1
+  port: 3005
+  maxOldSpaceSizeMb: 3072
+  resources:
+    requests:
+      memory: "3Gi"
+      cpu: "1000m"
+    limits:
+      memory: "4Gi"
+      cpu: "1000m"
+
+# ─── NuQ workers (the primary scrape/crawl workers) ───────────────────────────
+nuqWorker:
+  replicaCount: 5
+  port: 3006
+  maxOldSpaceSizeMb: 3072
+  resources:
+    requests:
+      memory: "3Gi"
+      cpu: "1000m"
+    limits:
+      memory: "4Gi"
+      cpu: "1000m"
+
+# ─── Playwright scraping microservice ─────────────────────────────────────────
+playwright:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/firecrawl/playwright-service
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  port: 3000
+  # Block images/media to save bandwidth and memory during scraping.
+  blockMedia: true
+  resources:
+    requests:
+      memory: "2Gi"
+      cpu: "1000m"
+    limits:
+      memory: "4Gi"
+      cpu: "2000m"
+
+# ─── Redis ────────────────────────────────────────────────────────────────────
+redis:
+  replicaCount: 1
+  image:
+    repository: redis
+    tag: "alpine"
+    pullPolicy: IfNotPresent
+  port: 6379
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+# ─── RabbitMQ (NuQ message broker) ────────────────────────────────────────────
+rabbitmq:
+  replicaCount: 1
+  image:
+    repository: rabbitmq
+    tag: "3-management"
+    pullPolicy: IfNotPresent
+  port: 5672
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+# ─── NuQ PostgreSQL (queue backend) ───────────────────────────────────────────
+nuqPostgres:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/firecrawl/nuq-postgres
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  port: 5432
+  auth:
+    username: postgres
+    # Overridden by secrets.postgresPassword (or an existingSecret). Kept here
+    # only so the composed NUQ_DATABASE_URL can be rendered; the value below is
+    # a non-secret default for local use — set a real password in production.
+    password: postgres
+    database: postgres
+  # PERSISTENCE IS OFF BY DEFAULT. The queue state (and any crawl results held
+  # in Postgres) is LOST when the pod is replaced. Enable for anything you care
+  # about surviving restarts.
+  persistence:
+    enabled: false
+    size: 10Gi
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+# ─── Firecrawl MCP server (the externally-reachable endpoint) ─────────────────
+mcp:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/firecrawl/firecrawl-mcp-server
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  # The service image serves HTTP (NGINX + FastMCP) on this port.
+  port: 8080
+  # Public MCP path the FastMCP server and nginx serve. MCP clients connect to
+  # <ingress-host><endpoint>. Keep in sync with any Ingress paths.
+  endpoint: /v2/mcp
+  service:
+    type: ClusterIP
+    port: 80
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  # Ingress for the MCP server — the ONLY externally-exposed component.
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts:
+      - host: firecrawl-mcp.local
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+    #  - secretName: firecrawl-mcp-tls
+    #    hosts:
+    #      - firecrawl-mcp.example.com
+
+# ─── Shared Firecrawl configuration (rendered into a ConfigMap) ────────────────
+# Connection URLs (Redis, Playwright, Postgres, RabbitMQ, API) are computed
+# automatically from the release name — do not set them here unless overriding.
+config:
+  # The self-hosted API is unauthenticated when this is false. Do NOT expose the
+  # API outside a trusted network without adding real authentication first.
+  useDbAuthentication: false
+  loggingLevel: "INFO"
+  numWorkersPerQueue: 8
+  # ─── Optional AI-backed features (summary / JSON extraction) ───────────────
+  # These only activate when openaiBaseUrl is set AND secrets.openaiApiKey is
+  # provided (see the secrets block). Point openaiBaseUrl at any
+  # OpenAI-compatible endpoint. Firecrawl uses the OpenAI *Responses API*
+  # (/responses), so the endpoint and chosen model must support it.
+  openaiBaseUrl: ""
+  # Chat model used for summary/extraction. Defaults to a small, capable model;
+  # override to match your endpoint's catalogue.
+  modelName: "gpt-4o-mini"
+  # Embedding model (only needed by features that embed text).
+  modelEmbeddingName: "text-embedding-3-small"
+  ollamaBaseUrl: ""
+  # Arbitrary extra key/value pairs merged into the ConfigMap.
+  extra: {}
+
+# ─── Secrets ──────────────────────────────────────────────────────────────────
+secrets:
+  # If set, the chart will NOT create a Secret and reads credentials from this
+  # pre-existing Secret. It must contain keys: POSTGRES_PASSWORD, OPENAI_API_KEY.
+  existingSecret: ""
+  # Password for the bundled NuQ PostgreSQL. Must match nuqPostgres.auth.password.
+  postgresPassword: "postgres"
+  # Only needed if you enable AI features via an OpenAI-compatible endpoint.
+  openaiApiKey: ""
+
+# ─── Pod scheduling / security (applied to all Deployments) ───────────────────
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Pod-level security context. Firecrawl/Playwright images may write to the
+# filesystem, so readOnlyRootFilesystem is not enforced globally; see each
+# Deployment for the container-level context.
+podSecurityContext:
+  runAsNonRoot: false

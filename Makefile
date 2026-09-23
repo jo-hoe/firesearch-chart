@@ -1,26 +1,26 @@
-# Firesearch — self-hosted deployment
+# firecrawl-mcp — self-hosted Firecrawl + MCP server (Helm chart)
 #
-# Common targets for building the image, linting/packaging the Helm chart, and
-# spinning up a local k3d cluster for end-to-end testing.
+# Common targets for linting/packaging the Helm chart and spinning up a local
+# k3d cluster for end-to-end testing. There is no custom image to build: every
+# component uses an official, anonymously-pullable ghcr.io/firecrawl/* image.
 
-# ── Configuration (override on the command line, e.g. `make build TAG=1.2.3`) ──
-IMAGE_NAME    ?= firesearch
-TAG           ?= local
-# Firesearch git ref (tag/branch/sha) the image is built from. Defaults to TAG
-# when TAG looks like a version, else `main`.
-FIRESEARCH_REF ?= main
-CHART_DIR     ?= charts/firesearch
-RELEASE_NAME  ?= firesearch
-NAMESPACE     ?= firesearch
+# ── Configuration (override on the command line, e.g. `make package`) ─────────
+# Absolute path to this Makefile's directory (trailing slash), used for Docker
+# volume mounts.
+ROOT_DIR      := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
+CHART_DIR     ?= charts/firecrawl-mcp
+RELEASE_NAME  ?= firecrawl
+NAMESPACE     ?= firecrawl
+# Minimal-footprint values so the whole stack fits on a laptop / k3d / homelab.
+MINIMAL_VALUES ?= $(CHART_DIR)/values-minimal.yaml
+# Ingress host used for the local k3d smoke test.
+MCP_HOST      ?= firecrawl-mcp.localhost
+# helm-docs image used to (re)generate the chart README from values.yaml.
+HELM_DOCS_IMAGE ?= jnorwood/helm-docs:latest
 
 # k3d specifics
 K3D_CLUSTER   ?= firesearch
 K3D_CONFIG    ?= k3d/cluster.yaml
-# Registry as seen from the host (localhost) and from inside the cluster.
-REGISTRY_HOST ?= localhost:5000
-REGISTRY_IN   ?= firesearch-registry:5000
-# Local values file used for k3d deploys (git-ignored; contains secrets).
-LOCAL_VALUES  ?= k3d/values.local.yaml
 
 .DEFAULT_GOAL := help
 
@@ -30,73 +30,58 @@ help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
-# ── Docker ──────────────────────────────────────────────────────────────────
-.PHONY: build
-build: ## Build the container image (FIRESEARCH_REF selects the app version)
-	docker build --build-arg FIRESEARCH_REF=$(FIRESEARCH_REF) -t $(IMAGE_NAME):$(TAG) .
-
-.PHONY: run
-run: ## Run the image locally on :3000 (requires OPENAI_API_KEY, FIRECRAWL_API_KEY in env)
-	docker run --rm -p 3000:3000 \
-		-e OPENAI_API_KEY=$(OPENAI_API_KEY) \
-		-e OPENAI_BASE_URL=$(OPENAI_BASE_URL) \
-		-e FIRECRAWL_API_KEY=$(FIRECRAWL_API_KEY) \
-		$(IMAGE_NAME):$(TAG)
-
 # ── Helm ──────────────────────────────────────────────────────────────────────
 .PHONY: lint
 lint: ## Lint the Helm chart
 	helm lint $(CHART_DIR) --strict
 
 .PHONY: template
-template: ## Render the chart to stdout (uses dummy secrets)
-	helm template $(RELEASE_NAME) $(CHART_DIR) \
-		--set-string secrets.openaiApiKey=dummy \
-		--set-string secrets.firecrawlApiKey=dummy
+template: ## Render the chart to stdout (production defaults)
+	helm template $(RELEASE_NAME) $(CHART_DIR)
+
+.PHONY: template-minimal
+template-minimal: ## Render the chart with the minimal-footprint values
+	helm template $(RELEASE_NAME) $(CHART_DIR) -f $(MINIMAL_VALUES)
 
 .PHONY: package
 package: ## Package the chart into a .tgz
 	helm package $(CHART_DIR)
 
+.PHONY: generate-helm-docs
+generate-helm-docs: ## Generate the chart README from values.yaml via helm-docs
+	@docker run --rm --volume "$(ROOT_DIR)$(CHART_DIR):/helm-docs" $(HELM_DOCS_IMAGE)
+
 # ── k3d end-to-end ────────────────────────────────────────────────────────────
 .PHONY: k3d-up
-k3d-up: ## Create the local k3d cluster (with registry + ingress)
+k3d-up: ## Create the local k3d cluster (with ingress)
 	k3d cluster create --config $(K3D_CONFIG)
 
 .PHONY: k3d-down
 k3d-down: ## Delete the local k3d cluster
 	k3d cluster delete $(K3D_CLUSTER)
 
-.PHONY: k3d-push
-k3d-push: build ## Build and push the image to the k3d registry
-	docker tag $(IMAGE_NAME):$(TAG) $(REGISTRY_HOST)/$(IMAGE_NAME):$(TAG)
-	docker push $(REGISTRY_HOST)/$(IMAGE_NAME):$(TAG)
-
 .PHONY: k3d-deploy
-k3d-deploy: k3d-push ## Deploy the chart into k3d using $(LOCAL_VALUES)
-	@test -f $(LOCAL_VALUES) || { \
-		echo "ERROR: $(LOCAL_VALUES) not found. Copy k3d/values.example.yaml to it and fill in API keys."; \
-		exit 1; }
+k3d-deploy: ## Deploy the chart into k3d with the minimal-footprint values + ingress
 	helm upgrade --install $(RELEASE_NAME) $(CHART_DIR) \
 		--namespace $(NAMESPACE) --create-namespace \
-		--set-string image.repository=$(REGISTRY_IN)/$(IMAGE_NAME) \
-		--set-string image.tag=$(TAG) \
-		-f $(LOCAL_VALUES) \
-		--wait --timeout 5m
+		-f $(MINIMAL_VALUES) \
+		--set mcp.ingress.enabled=true \
+		--set-string mcp.ingress.className=traefik \
+		--set 'mcp.ingress.hosts[0].host=$(MCP_HOST)' \
+		--set 'mcp.ingress.hosts[0].paths[0].path=/' \
+		--set 'mcp.ingress.hosts[0].paths[0].pathType=Prefix' \
+		--wait --timeout 10m
 
 .PHONY: k3d-test
-k3d-test: ## Full end-to-end: create cluster, deploy, and smoke-test
+k3d-test: ## Full end-to-end: create cluster, deploy, and helm test
 	$(MAKE) k3d-up
 	$(MAKE) k3d-deploy
-	@echo "Waiting for rollout..."
-	kubectl -n $(NAMESPACE) rollout status deploy/$(RELEASE_NAME) --timeout=180s
-	@echo "Smoke-testing via port-forward..."
-	kubectl -n $(NAMESPACE) port-forward svc/$(RELEASE_NAME) 3000:80 & \
-		PF_PID=$$!; sleep 5; \
-		curl -fsS http://127.0.0.1:3000/ >/dev/null && echo "OK: app responded" || (echo "FAIL"; kill $$PF_PID; exit 1); \
-		kill $$PF_PID
+	@echo "Waiting for the API and MCP server to be ready..."
+	kubectl -n $(NAMESPACE) rollout status deploy/$(RELEASE_NAME)-firecrawl-mcp-api --timeout=300s
+	kubectl -n $(NAMESPACE) rollout status deploy/$(RELEASE_NAME)-firecrawl-mcp-mcp --timeout=120s
+	@echo "Running helm test (API readiness + MCP initialize handshake)..."
+	helm test $(RELEASE_NAME) -n $(NAMESPACE) --timeout 150s
 
 .PHONY: clean
-clean: ## Remove packaged charts and build output
+clean: ## Remove packaged charts
 	rm -f *.tgz
-	rm -rf .next node_modules
