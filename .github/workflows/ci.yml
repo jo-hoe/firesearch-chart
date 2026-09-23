@@ -13,36 +13,10 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  # Firesearch git ref the image is built from during CI checks.
+  FIRESEARCH_REF: main
 
 jobs:
-  # ── Lint & build the Next.js app ───────────────────────────────────────────
-  build:
-    name: Lint & Build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 9.15.9
-
-      - name: Set up Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: '22'
-          cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Lint
-        run: pnpm run lint
-
-      - name: Build
-        run: pnpm run build
-
   # ── Lint the Helm chart ────────────────────────────────────────────────────
   helm-lint:
     name: Helm Lint
@@ -63,11 +37,35 @@ jobs:
             --set-string secrets.openaiApiKey=test \
             --set-string secrets.firecrawlApiKey=test > /dev/null
 
+  # ── Build the container image (integration check) ──────────────────────────
+  # This repo holds no app source; the Dockerfile clones Firesearch at build
+  # time. Building the image is therefore the real integration test — it
+  # exercises the clone, the standalone-output injection, and the pnpm build.
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: false
+          build-args: |
+            FIRESEARCH_REF=${{ env.FIRESEARCH_REF }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   # ── Build & publish the container image ────────────────────────────────────
-  docker:
+  docker-publish:
     name: Build & Push Image
     runs-on: ubuntu-latest
-    needs: [build, helm-lint]
+    needs: [helm-lint, docker-build]
     # Only publish on version tags.
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
@@ -86,7 +84,7 @@ jobs:
 
       - name: Extract metadata (tags, labels)
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
@@ -96,13 +94,15 @@ jobs:
             type=sha
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Build and push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
+          build-args: |
+            FIRESEARCH_REF=${{ env.FIRESEARCH_REF }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
