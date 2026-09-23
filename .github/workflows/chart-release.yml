@@ -1,0 +1,41 @@
+name: Release Chart
+
+# Publishes the Helm chart to the gh-pages branch (as a Helm repo) whenever the
+# chart version in Chart.yaml changes on main. Uses the official chart-releaser.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'charts/firesearch/Chart.yaml'
+
+# Serialize releases so concurrent runs don't clobber the gh-pages index.
+concurrency:
+  group: chart-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Run chart-releaser
+        uses: helm/chart-releaser-action@v1.6.0
+        with:
+          charts_dir: charts
+        env:
+          CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"

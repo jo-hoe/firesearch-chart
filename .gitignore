@@ -1,0 +1,22 @@
+# ── Node / build artifacts ──────────────────────────────────────────────────
+node_modules/
+.next/
+out/
+
+# ── Environment & secrets ─────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# Local Helm values that may contain secrets or machine-specific config.
+*.local.yaml
+charts/**/my-values.yaml
+k3d/values.local.yaml
+
+# Packaged Helm charts
+*.tgz
+
+# ── OS / editor ───────────────────────────────────────────────────────────────
+.DS_Store
+.vscode/
+.idea/

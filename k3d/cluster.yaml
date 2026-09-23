@@ -1,0 +1,19 @@
+# k3d cluster definition for local end-to-end testing of the firesearch chart.
+# Create with:  k3d cluster create --config k3d/cluster.yaml
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+metadata:
+  name: firesearch
+servers: 1
+agents: 1
+ports:
+  # Expose the cluster's Traefik ingress on localhost:8080.
+  - port: 8080:80
+    nodeFilters:
+      - loadbalancer
+registries:
+  # A local registry so we can push the locally-built image without a remote push.
+  create:
+    name: firesearch-registry
+    host: "0.0.0.0"
+    hostPort: "5000"
