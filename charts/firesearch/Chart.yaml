@@ -1,22 +1,22 @@
 apiVersion: v2
 name: firesearch
-description: A Helm chart for Firesearch — a self-hosted, Firecrawl-powered deep research app built on Next.js 15.
+description: An unofficial Helm chart for deploying Firesearch, a self-hosted deep research app built on Next.js. Not affiliated with or endorsed by Firecrawl.
 type: application
 
 # Chart version. Bumped on every packaging change to the chart.
-version: 0.1.0
+version: 0.2.0
 
 # Version of the Firesearch application deployed by this chart.
 # Matches the default image tag in values.yaml.
 appVersion: "1.0.0"
 
-home: https://github.com/firecrawl/firesearch
+home: https://github.com/jo-hoe/firesearch-chart
 sources:
-  - https://github.com/firecrawl/firesearch
+  - https://github.com/jo-hoe/firesearch-chart
 keywords:
   - firesearch
-  - firecrawl
   - search
   - nextjs
 maintainers:
-  - name: firesearch-chart
+  - name: jo-hoe
+    url: https://github.com/jo-hoe

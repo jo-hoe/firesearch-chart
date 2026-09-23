@@ -1,7 +1,27 @@
-# Firesearch — Self-Hosted Deployment
+# Firesearch — Self-Hosted Deployment (Unofficial)
 
-Container image and Helm chart for self-hosting [Firesearch](https://github.com/firecrawl/firesearch),
-a Firecrawl-powered deep-research app built on Next.js 15.
+Container image and Helm chart for self-hosting
+[Firesearch](https://github.com/firecrawl/firesearch), a deep-research app built
+on Next.js.
+
+> [!IMPORTANT]
+> **Disclaimer — no affiliation.** This is an independent, community-maintained
+> deployment project. It is **not** affiliated with, endorsed by, or sponsored
+> by Firecrawl or the Firesearch maintainers. "Firesearch" and "Firecrawl" are
+> the property of their respective owners and are used here only to describe the
+> upstream software this project deploys (nominative use). No trademarks, logos,
+> or icons of the upstream project are included or redistributed.
+>
+> **Upstream license.** This repository contains only original deployment
+> tooling (Dockerfile, Helm chart, CI). It does **not** redistribute Firesearch
+> source code — the image is built by cloning the upstream repository at build
+> time. The Firesearch README states an MIT license, but at the time of writing
+> the upstream repository does **not contain a `LICENSE` file**. Before building,
+> distributing, or hosting the resulting image, **verify the upstream license
+> terms yourself** (e.g. open an issue upstream asking them to add a `LICENSE`
+> file). You are responsible for your own compliance.
+>
+> This deployment tooling is licensed under the MIT License (see `LICENSE`).
 
 ## Contents
 

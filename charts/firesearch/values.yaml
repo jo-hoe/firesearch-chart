@@ -4,6 +4,9 @@
 # Number of application replicas. Firesearch is stateless, so it scales horizontally.
 replicaCount: 1
 
+# Number of old ReplicaSets to retain for rollback.
+revisionHistoryLimit: 3
+
 image:
   repository: ghcr.io/firecrawl/firesearch
   # The Firesearch release version to deploy. This is the image tag; the image
@@ -92,12 +95,16 @@ nodeSelector: {}
 tolerations: []
 affinity: {}
 podAnnotations: {}
+# Extra labels applied to pods (merged with the standard selector labels).
+podLabels: {}
 
 serviceAccount:
   # Whether to create a dedicated ServiceAccount.
   create: true
   # Name to use; generated from the fullname template if empty.
   name: ""
+  # Firesearch does not talk to the Kubernetes API, so its token is not mounted.
+  automount: false
   annotations: {}
 
 # ─── Ingress ─────────────────────────────────────────────────────────────────
